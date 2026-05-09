@@ -1,0 +1,112 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: #2c1a0e;
+  overflow: hidden;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  touch-action: none;
+  user-select: none;
+}
+
+#gameCanvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+#ui-overlay {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(44, 26, 14, 0.88);
+  border: 3px solid #c8a060;
+  border-radius: 20px;
+  padding: 24px 40px;
+  text-align: center;
+  color: #f5e6c8;
+  font-size: 28px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  z-index: 10;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  pointer-events: none;
+}
+
+#ui-overlay.hidden {
+  display: none;
+}
+
+#ui-overlay .sub {
+  font-size: 16px;
+  color: #c8a060;
+  margin-top: 8px;
+  letter-spacing: 1px;
+}
+
+#controls {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  background: linear-gradient(to bottom, #3d2510, #2c1a0e);
+  border-top: 2px solid #5a3a1a;
+  z-index: 5;
+}
+
+#controls button {
+  width: 140px;
+  height: 52px;
+  border: none;
+  border-radius: 12px;
+  font-size: 18px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  cursor: pointer;
+  outline: none;
+  position: relative;
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+
+#btn-refresh {
+  background: linear-gradient(to bottom, #a0714a, #7a4f2e);
+  color: #f5e6c8;
+  box-shadow: 0 6px 0 #4a2e10, 0 8px 10px rgba(0,0,0,0.5);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+
+#btn-launch {
+  background: linear-gradient(to bottom, #c87830, #9a5418);
+  color: #fff8e8;
+  box-shadow: 0 6px 0 #5a2e08, 0 8px 10px rgba(0,0,0,0.5);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+
+#controls button:active {
+  transform: translateY(4px);
+}
+
+#btn-refresh:active {
+  box-shadow: 0 2px 0 #4a2e10, 0 3px 4px rgba(0,0,0,0.4);
+}
+
+#btn-launch:active {
+  box-shadow: 0 2px 0 #5a2e08, 0 3px 4px rgba(0,0,0,0.4);
+}
+
+#controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
