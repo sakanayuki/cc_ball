@@ -2,7 +2,7 @@
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const BALL_RADIUS    = 18;
-const GOAL_WIDTH     = BALL_RADIUS * 4;   // ボール直径×2
+const GOAL_WIDTH     = BALL_RADIUS * 4;
 const GOAL_DEPTH     = 70;
 const GOAL_WALL_W    = 14;
 const CONTROLS_H     = 80;
@@ -11,6 +11,10 @@ const SEESAW_COUNT   = 2;
 const LAUNCH_VX      = -5;
 const LAUNCH_VY      = -1.5;
 const WALL_T         = 60;
+const STICK_H        = 12;
+const MIN_STICK_GAP  = BALL_RADIUS * 4; // 72px = ball diameter × 2
+const MIN_STICK_ANGLE = 20 * Math.PI / 180;
+const MAX_STICK_ANGLE = 70 * Math.PI / 180;
 
 // ── Matter.js aliases ──────────────────────────────────────────────────────
 const { Engine, World, Bodies, Body, Events, Constraint, Composite } = Matter;
@@ -36,13 +40,13 @@ function createEngine() {
 createEngine();
 
 // ── Game state ────────────────────────────────────────────────────────────
-let ball        = null;
-let ballsLeft   = 3;
-let state       = 'waiting'; // waiting | launched | result
-let goalSensor  = null;
-let obstacles   = [];        // all obstacle bodies (sticks + seesaws)
-let seesawBodies = new Set();// subset of obstacles that are seesaws
-let seesawPins  = [];
+let ball             = null;
+let ballsLeft        = 3;
+let state            = 'waiting'; // waiting | launched | result
+let goalSensor       = null;
+let obstacles        = [];
+let seesawBodies     = new Set();
+let seesawPins       = [];
 let lastCollisionSounds = 0;
 
 // ── Wood grain texture cache ──────────────────────────────────────────────
@@ -82,6 +86,43 @@ function makeRect(x, y, w, h, opts) {
   return body;
 }
 
+// ── Segment geometry helpers ───────────────────────────────────────────────
+function ptSegDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx*dx + dy*dy;
+  if (len2 < 1e-10) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px-ax)*dx + (py-ay)*dy) / len2));
+  return Math.hypot(px - ax - t*dx, py - ay - t*dy);
+}
+
+function segSegMinDist(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2) {
+  const d1x = ax2-ax1, d1y = ay2-ay1;
+  const d2x = bx2-bx1, d2y = by2-by1;
+  const denom = d1x*d2y - d1y*d2x;
+  if (Math.abs(denom) > 1e-10) {
+    const t = ((bx1-ax1)*d2y - (by1-ay1)*d2x) / denom;
+    const u = ((bx1-ax1)*d1y - (by1-ay1)*d1x) / denom;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return 0;
+  }
+  return Math.min(
+    ptSegDist(ax1, ay1, bx1, by1, bx2, by2),
+    ptSegDist(ax2, ay2, bx1, by1, bx2, by2),
+    ptSegDist(bx1, by1, ax1, ay1, ax2, ay2),
+    ptSegDist(bx2, by2, ax1, ay1, ax2, ay2)
+  );
+}
+
+function stickEdgeDist(x1, y1, w1, a1, x2, y2, w2, a2) {
+  const hw1 = w1/2, hw2 = w2/2;
+  const c1 = Math.cos(a1), s1 = Math.sin(a1);
+  const c2 = Math.cos(a2), s2 = Math.sin(a2);
+  const cl = segSegMinDist(
+    x1 - hw1*c1, y1 - hw1*s1, x1 + hw1*c1, y1 + hw1*s1,
+    x2 - hw2*c2, y2 - hw2*s2, x2 + hw2*c2, y2 + hw2*s2
+  );
+  return cl - STICK_H;
+}
+
 // ── World construction ────────────────────────────────────────────────────
 function buildGoal() {
   const gx = goalX();
@@ -102,10 +143,9 @@ function buildGoal() {
 
 function buildWalls() {
   const W = canvas.width, H = canvas.height;
+  // Left/right walls removed — ball wraps around instead
   World.add(world, [
-    makeRect(-WALL_T / 2,     H / 2, WALL_T, H * 2,  { isStatic: true, label: 'wall', friction: 0.3, restitution: 0.3 }),
-    makeRect(W + WALL_T / 2,  H / 2, WALL_T, H * 2,  { isStatic: true, label: 'wall', friction: 0.3, restitution: 0.3 }),
-    makeRect(W / 2, -WALL_T / 2, W * 2, WALL_T,      { isStatic: true, label: 'wall', friction: 0,   restitution: 0.5 }),
+    makeRect(W / 2, -WALL_T / 2, W * 2, WALL_T, { isStatic: true, label: 'wall', friction: 0, restitution: 0.5 }),
   ]);
 }
 
@@ -131,41 +171,69 @@ function generateObstacles() {
     }
   }
 
-  // Fixed sticks
+  // Fixed sticks — angle constrained to 20–70°
   for (let i = 0; i < OBSTACLE_COUNT; i++) {
-    tryPlace(30, () => {
-      const w     = 80 + Math.random() * 100;
-      const h     = 12;
-      const angle = (Math.random() - 0.5) * (Math.PI * 0.55);
-      const x     = W * 0.08 + Math.random() * (W * 0.84);
-      const y     = H * 0.12 + Math.random() * (H * 0.70);
-      if (isInExcludeZone(x, y, w + 20, h + 20)) return null;
+    tryPlace(60, () => {
+      const w        = 80 + Math.random() * 100;
+      const angleMag = MIN_STICK_ANGLE + Math.random() * (MAX_STICK_ANGLE - MIN_STICK_ANGLE);
+      const angle    = angleMag * (Math.random() < 0.5 ? 1 : -1);
+
+      const hw     = w / 2;
+      const dx     = hw * Math.abs(Math.cos(angle));
+      const dy     = hw * Math.abs(Math.sin(angle));
+      const margin = 12;
+      const xMin   = dx + margin;
+      const xMax   = W - dx - margin;
+      const yMin   = H * 0.12 + dy;
+      const yMax   = H * 0.82 - dy;
+      if (xMin >= xMax || yMin >= yMax) return null;
+
+      const x = xMin + Math.random() * (xMax - xMin);
+      const y = yMin + Math.random() * (yMax - yMin);
+
+      if (isInExcludeZone(x, y, w + 20, STICK_H + 20)) return null;
+
       for (const p of placed) {
-        if (Math.hypot(p.x - x, p.y - y) < 70) return null;
+        if (stickEdgeDist(x, y, w, angle, p.x, p.y, p.w, p.angle) < MIN_STICK_GAP) return null;
       }
-      const body = makeRect(x, y, w, h, {
+
+      const body = makeRect(x, y, w, STICK_H, {
         isStatic: true, label: 'obstacle', angle,
         friction: 0.5, restitution: 0.25
       });
       obstacles.push(body);
       World.add(world, body);
-      return { x, y };
+      return { x, y, w, angle };
     });
   }
 
-  // Seesaws
+  // Seesaws — no angle restriction
   for (let i = 0; i < SEESAW_COUNT; i++) {
-    tryPlace(30, () => {
-      const w = 130 + Math.random() * 60;
-      const h = 12;
-      const x = W * 0.15 + Math.random() * (W * 0.70);
-      const y = H * 0.20 + Math.random() * (H * 0.55);
-      if (isInExcludeZone(x, y, w + 30, h + 60)) return null;
+    tryPlace(60, () => {
+      const w     = 130 + Math.random() * 60;
+      const angle = (Math.random() - 0.5) * (Math.PI * 0.55);
+
+      const hw     = w / 2;
+      const dx     = hw * Math.abs(Math.cos(angle));
+      const dy     = hw * Math.abs(Math.sin(angle));
+      const margin = 12;
+      const xMin   = dx + margin;
+      const xMax   = W - dx - margin;
+      const yMin   = H * 0.20 + dy;
+      const yMax   = H * 0.75 - dy;
+      if (xMin >= xMax || yMin >= yMax) return null;
+
+      const x = xMin + Math.random() * (xMax - xMin);
+      const y = yMin + Math.random() * (yMax - yMin);
+
+      if (isInExcludeZone(x, y, w + 30, STICK_H + 60)) return null;
+
       for (const p of placed) {
-        if (Math.hypot(p.x - x, p.y - y) < 100) return null;
+        if (stickEdgeDist(x, y, w, angle, p.x, p.y, p.w, p.angle) < MIN_STICK_GAP) return null;
       }
-      const seesaw = makeRect(x, y, w, h, {
-        label: 'seesaw', friction: 0.4, restitution: 0.2, frictionAir: 0.02
+
+      const seesaw = makeRect(x, y, w, STICK_H, {
+        label: 'seesaw', friction: 0.4, restitution: 0.2, frictionAir: 0.02, angle
       });
       const pin = Bodies.circle(x, y, 4, {
         isStatic: true, label: 'seesawPin',
@@ -180,7 +248,7 @@ function generateObstacles() {
       seesawBodies.add(seesaw);
       seesawPins.push(pin);
       World.add(world, [seesaw, pin, constraint]);
-      return { x, y };
+      return { x, y, w, angle };
     });
   }
 }
@@ -223,6 +291,17 @@ function rebuildWorld() {
   generateObstacles();
   createBall();
   registerCollisions();
+}
+
+// ── Screen-edge wrap ──────────────────────────────────────────────────────
+function applyWrap() {
+  if (!ball || state !== 'launched') return;
+  const x = ball.position.x;
+  if (x < -BALL_RADIUS) {
+    Body.setPosition(ball, { x: canvas.width + BALL_RADIUS, y: ball.position.y });
+  } else if (x > canvas.width + BALL_RADIUS) {
+    Body.setPosition(ball, { x: -BALL_RADIUS, y: ball.position.y });
+  }
 }
 
 // ── Collision events ───────────────────────────────────────────────────────
@@ -326,7 +405,6 @@ function roundRect(x, y, w, h, r) {
 }
 
 function drawStick(body, isSeesaw) {
-  // Use stored dimensions from plugin (set in makeRect)
   const bw = (body.plugin && body.plugin.w) ? body.plugin.w : 120;
   const bh = (body.plugin && body.plugin.h) ? body.plugin.h : 12;
   const hw = bw / 2, hh = bh / 2;
@@ -349,7 +427,6 @@ function drawStick(body, isSeesaw) {
   roundRect(-hw, -hh, bw, bh, 4);
   ctx.fill();
 
-  // Wood grain lines
   ctx.save();
   ctx.clip();
   ctx.strokeStyle = 'rgba(80,40,10,0.18)';
@@ -362,7 +439,6 @@ function drawStick(body, isSeesaw) {
   }
   ctx.restore();
 
-  // Seesaw pivot dot
   if (isSeesaw) {
     ctx.fillStyle = 'rgba(50,25,8,0.75)';
     ctx.beginPath();
@@ -370,7 +446,6 @@ function drawStick(body, isSeesaw) {
     ctx.fill();
   }
 
-  // Outline
   ctx.strokeStyle = 'rgba(50,25,8,0.45)';
   ctx.lineWidth   = 1.5;
   roundRect(-hw, -hh, bw, bh, 4);
@@ -404,7 +479,6 @@ function drawBallBody() {
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur  = 0;
 
-  // Wood grain rings
   ctx.save();
   ctx.clip();
   ctx.strokeStyle = 'rgba(80,40,10,0.22)';
@@ -416,7 +490,6 @@ function drawBallBody() {
   }
   ctx.restore();
 
-  // Highlight
   const hl = ctx.createRadialGradient(-BALL_RADIUS * 0.35, -BALL_RADIUS * 0.38, 1, -BALL_RADIUS * 0.2, -BALL_RADIUS * 0.2, BALL_RADIUS * 0.5);
   hl.addColorStop(0, 'rgba(255,240,180,0.55)');
   hl.addColorStop(1, 'rgba(255,220,140,0)');
@@ -433,7 +506,6 @@ function drawGoalShape() {
   const gy = goalY();
   const hw = GOAL_WIDTH / 2;
 
-  // Drop shadow
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath();
   ctx.ellipse(gx, gy + GOAL_DEPTH + 4, hw + 4, 8, 0, 0, Math.PI * 2);
@@ -456,17 +528,15 @@ function drawGoalShape() {
   roundRect(gx + hw, gy, GOAL_WALL_W, GOAL_DEPTH, 3);
   ctx.stroke();
 
-  // Dark interior
   const holeGrad = ctx.createLinearGradient(gx - hw, gy, gx - hw, gy + GOAL_DEPTH);
   holeGrad.addColorStop(0, 'rgba(0,0,0,0.05)');
   holeGrad.addColorStop(1, 'rgba(0,0,0,0.75)');
   ctx.fillStyle = holeGrad;
   ctx.fillRect(gx - hw, gy, GOAL_WIDTH, GOAL_DEPTH);
 
-  // Label
-  ctx.fillStyle   = 'rgba(255,220,100,0.9)';
-  ctx.font        = 'bold 13px Arial';
-  ctx.textAlign   = 'center';
+  ctx.fillStyle    = 'rgba(255,220,100,0.9)';
+  ctx.font         = 'bold 13px Arial';
+  ctx.textAlign    = 'center';
   ctx.textBaseline = 'bottom';
   ctx.fillText('GOAL', gx, gy - 4);
 }
@@ -614,7 +684,8 @@ function loop(ts) {
 
   Engine.update(engine, dt);
 
-  // Ball out-of-bounds → fail
+  applyWrap();
+
   if (state === 'launched' && ball && ball.position.y > canvas.height + 60) {
     onGoalFail();
   }
