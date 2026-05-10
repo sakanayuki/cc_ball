@@ -59,18 +59,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: 16px;
   background: linear-gradient(to bottom, #3d2510, #2c1a0e);
   border-top: 2px solid #5a3a1a;
   z-index: 5;
 }
 
 #controls button {
-  width: 140px;
   height: 52px;
   border: none;
   border-radius: 12px;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: bold;
   letter-spacing: 1px;
   cursor: pointer;
@@ -80,6 +79,7 @@ body {
 }
 
 #btn-refresh {
+  width: 120px;
   background: linear-gradient(to bottom, #a0714a, #7a4f2e);
   color: #f5e6c8;
   box-shadow: 0 6px 0 #4a2e10, 0 8px 10px rgba(0,0,0,0.5);
@@ -87,10 +87,25 @@ body {
 }
 
 #btn-launch {
+  width: 120px;
   background: linear-gradient(to bottom, #c87830, #9a5418);
   color: #fff8e8;
   box-shadow: 0 6px 0 #5a2e08, 0 8px 10px rgba(0,0,0,0.5);
   text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+
+#btn-gyro {
+  width: 120px;
+  background: linear-gradient(to bottom, #6a7a4a, #4a5a2e);
+  color: #f5e6c8;
+  box-shadow: 0 6px 0 #2a3a10, 0 8px 10px rgba(0,0,0,0.5);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  font-size: 14px;
+}
+
+#btn-gyro.active {
+  background: linear-gradient(to bottom, #8aaa5a, #5a8a38);
+  box-shadow: 0 6px 0 #3a6a18, 0 8px 10px rgba(0,0,0,0.5);
 }
 
 #controls button:active {
@@ -105,8 +120,17 @@ body {
   box-shadow: 0 2px 0 #5a2e08, 0 3px 4px rgba(0,0,0,0.4);
 }
 
+#btn-gyro:active {
+  box-shadow: 0 2px 0 #2a3a10, 0 3px 4px rgba(0,0,0,0.4);
+}
+
+#btn-gyro.active:active {
+  box-shadow: 0 2px 0 #3a6a18, 0 3px 4px rgba(0,0,0,0.4);
+}
+
 #controls button:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
   transform: none;
+  box-shadow: none;
 }
