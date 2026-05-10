@@ -49,11 +49,6 @@ let seesawBodies     = new Set();
 let seesawPins       = [];
 let lastCollisionSounds = 0;
 
-// ── Gyro state ────────────────────────────────────────────────────────────
-let gyroEnabled = false;
-let gyroAccelX  = 0;
-const GYRO_FORCE = 0.0002;
-
 // ── Wood grain texture cache ──────────────────────────────────────────────
 let bgGrain = null;
 
@@ -307,12 +302,6 @@ function applyWrap() {
   } else if (x > canvas.width + BALL_RADIUS) {
     Body.setPosition(ball, { x: -BALL_RADIUS, y: ball.position.y });
   }
-}
-
-// ── Gyro force ────────────────────────────────────────────────────────────
-function applyGyroForce() {
-  if (!gyroEnabled || !ball || state !== 'launched') return;
-  Body.applyForce(ball, ball.position, { x: -gyroAccelX * GYRO_FORCE, y: 0 });
 }
 
 // ── Collision events ───────────────────────────────────────────────────────
@@ -696,7 +685,6 @@ function loop(ts) {
   Engine.update(engine, dt);
 
   applyWrap();
-  applyGyroForce();
 
   if (state === 'launched' && ball && ball.position.y > canvas.height + 60) {
     onGoalFail();
@@ -714,49 +702,9 @@ function loop(ts) {
   requestAnimationFrame(loop);
 }
 
-// ── Gyro setup ─────────────────────────────────────────────────────────────
-function setupGyro() {
-  const btn       = document.getElementById('btn-gyro');
-  const hasMotion = !!window.DeviceMotionEvent;
-
-  if (!hasMotion) {
-    btn.disabled = true;
-    return;
-  }
-
-  btn.addEventListener('click', () => {
-    if (!gyroEnabled) {
-      const enable = () => {
-        gyroEnabled = true;
-        btn.textContent = 'ジャイロ ON';
-        btn.classList.add('active');
-      };
-      if (typeof DeviceMotionEvent.requestPermission === 'function') {
-        DeviceMotionEvent.requestPermission()
-          .then(res => { if (res === 'granted') enable(); })
-          .catch(() => {});
-      } else {
-        enable();
-      }
-    } else {
-      gyroEnabled     = false;
-      gyroAccelX      = 0;
-      btn.textContent = 'ジャイロ OFF';
-      btn.classList.remove('active');
-    }
-  });
-
-  window.addEventListener('devicemotion', (e) => {
-    if (!gyroEnabled) return;
-    const accel = e.accelerationIncludingGravity;
-    if (accel) gyroAccelX = accel.x || 0;
-  });
-}
-
 // ── Init ───────────────────────────────────────────────────────────────────
 document.getElementById('btn-refresh').addEventListener('click', onRefresh);
 document.getElementById('btn-launch').addEventListener('click', onLaunch);
-setupGyro();
 
 buildWalls();
 buildGoal();
