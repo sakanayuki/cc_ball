@@ -15,6 +15,8 @@ const STICK_H        = 12;
 const MIN_STICK_GAP  = BALL_RADIUS * 4; // 72px = ball diameter × 2
 const MIN_STICK_ANGLE = 20 * Math.PI / 180;
 const MAX_STICK_ANGLE = 70 * Math.PI / 180;
+const GOAL_MARGIN     = 25;
+const GOAL_PERIOD     = 3000; // ms per full round trip
 
 // ── Matter.js aliases ──────────────────────────────────────────────────────
 const { Engine, World, Bodies, Body, Events, Constraint, Composite } = Matter;
@@ -44,6 +46,9 @@ let ball             = null;
 let ballsLeft        = 3;
 let state            = 'waiting'; // waiting | launched | result
 let goalSensor       = null;
+let goalLeftWall     = null;
+let goalRightWall    = null;
+let goalPhase        = 0; // radians, accumulates each frame
 let obstacles        = [];
 let seesawBodies     = new Set();
 let seesawPins       = [];
@@ -74,7 +79,13 @@ function buildBgGrain() {
 }
 
 // ── Goal / Launch positions ────────────────────────────────────────────────
-function goalX()   { return 50 + GOAL_WIDTH / 2; }
+function goalX() {
+  const minX   = GOAL_MARGIN + GOAL_WIDTH / 2 + GOAL_WALL_W;
+  const maxX   = canvas.width - GOAL_MARGIN - GOAL_WIDTH / 2 - GOAL_WALL_W;
+  const center = (minX + maxX) / 2;
+  const range  = (maxX - minX) / 2;
+  return center + range * Math.sin(goalPhase);
+}
 function goalY()   { return canvas.height - GOAL_DEPTH - 4; }
 function launchX() { return canvas.width - 36; }
 function launchY() { return 44; }
@@ -129,16 +140,26 @@ function buildGoal() {
   const gy = goalY();
   const hw = GOAL_WIDTH / 2 + GOAL_WALL_W / 2;
 
-  const leftWall  = makeRect(gx - hw, gy + GOAL_DEPTH / 2, GOAL_WALL_W, GOAL_DEPTH, {
+  goalLeftWall  = makeRect(gx - hw, gy + GOAL_DEPTH / 2, GOAL_WALL_W, GOAL_DEPTH, {
     isStatic: true, label: 'goalWall', friction: 0.3, restitution: 0.1
   });
-  const rightWall = makeRect(gx + hw, gy + GOAL_DEPTH / 2, GOAL_WALL_W, GOAL_DEPTH, {
+  goalRightWall = makeRect(gx + hw, gy + GOAL_DEPTH / 2, GOAL_WALL_W, GOAL_DEPTH, {
     isStatic: true, label: 'goalWall', friction: 0.3, restitution: 0.1
   });
   goalSensor = makeRect(gx, gy + GOAL_DEPTH - 6, GOAL_WIDTH, 12, {
     isStatic: true, isSensor: true, label: 'goalSensor'
   });
-  World.add(world, [leftWall, rightWall, goalSensor]);
+  World.add(world, [goalLeftWall, goalRightWall, goalSensor]);
+}
+
+function updateGoal() {
+  if (!goalLeftWall || !goalRightWall || !goalSensor) return;
+  const gx = goalX();
+  const gy = goalY();
+  const hw = GOAL_WIDTH / 2 + GOAL_WALL_W / 2;
+  Body.setPosition(goalLeftWall,  { x: gx - hw, y: gy + GOAL_DEPTH / 2 });
+  Body.setPosition(goalRightWall, { x: gx + hw, y: gy + GOAL_DEPTH / 2 });
+  Body.setPosition(goalSensor,    { x: gx,      y: gy + GOAL_DEPTH - 6  });
 }
 
 function buildWalls() {
@@ -281,11 +302,13 @@ function rebuildWorld() {
   World.clear(world);
   Engine.clear(engine);
   createEngine();
-  ball         = null;
-  obstacles    = [];
-  seesawBodies = new Set();
-  seesawPins   = [];
-  goalSensor   = null;
+  ball          = null;
+  obstacles     = [];
+  seesawBodies  = new Set();
+  seesawPins    = [];
+  goalSensor    = null;
+  goalLeftWall  = null;
+  goalRightWall = null;
   buildWalls();
   buildGoal();
   generateObstacles();
@@ -681,6 +704,9 @@ let lastTime = performance.now();
 function loop(ts) {
   const dt = Math.min(ts - lastTime, 32);
   lastTime = ts;
+
+  goalPhase += (2 * Math.PI * dt) / GOAL_PERIOD;
+  updateGoal();
 
   Engine.update(engine, dt);
 
